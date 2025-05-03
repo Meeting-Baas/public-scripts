@@ -238,13 +238,48 @@ def clone_or_update_repos(repos, output_dir=None, use_ssh=True):
             # Directory doesn't exist, clone the repository
             print_info(f"Cloning: {name} ({repo['visibility']})")
             try:
+                # Clone without setting up tracking branches
                 subprocess.run(
-                    ["git", "clone", url, name],
+                    ["git", "clone", "--no-checkout", url, name],
                     check=True,
                     stdout=subprocess.PIPE,
                     stderr=subprocess.PIPE,
                 )
-                print_success(f"Cloned {name}")
+
+                # Setup the repo without automatic tracking
+                subprocess.run(
+                    ["git", "-C", name, "config", "remote.origin.fetch", ""],
+                    check=True,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                )
+
+                # Manually fetch the main branch
+                subprocess.run(
+                    ["git", "-C", name, "fetch", "origin", "main"],
+                    check=True,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                )
+
+                # Create local main branch without tracking
+                subprocess.run(
+                    [
+                        "git",
+                        "-C",
+                        name,
+                        "checkout",
+                        "-b",
+                        "main",
+                        "origin/main",
+                        "--no-track",
+                    ],
+                    check=True,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                )
+
+                print_success(f"Cloned {name} (without tracking remote branches)")
                 new_repos += 1
             except subprocess.CalledProcessError as e:
                 error_msg = (
