@@ -91,7 +91,7 @@ def get_all_repos(org):
                 "--limit",
                 "1000",
                 "--json",
-                "name,url,sshUrl,visibility",
+                "name,url,sshUrl,isPrivate",
             ],
             check=True,
             capture_output=True,
@@ -112,10 +112,16 @@ def get_all_repos(org):
 
 def filter_repos_by_visibility(repos, visibility):
     """Filter repositories by visibility."""
+    # if visibility.lower() == "all":
+    #     return repos
+
+    # return [repo for repo in repos if repo["visibility"].lower() == visibility.lower()]
+
     if visibility.lower() == "all":
         return repos
+    is_private = visibility.lower() == "private"
+    return [repo for repo in repos if repo.get("isPrivate") == is_private]
 
-    return [repo for repo in repos if repo["visibility"].lower() == visibility.lower()]
 
 
 def is_git_repository(path):
@@ -236,50 +242,19 @@ def clone_or_update_repos(repos, output_dir=None, use_ssh=True):
                 skipped_repos += 1
         else:
             # Directory doesn't exist, clone the repository
-            print_info(f"Cloning: {name} ({repo['visibility']})")
+            # print_info(f"Cloning: {name} ({repo['visibility']})")
+            visibility = "private" if repo.get("isPrivate") else "public"
+            print_info(f"Cloning: {name} ({visibility})")
+
             try:
-                # Clone without setting up tracking branches
+                # Simple clone with all branches
                 subprocess.run(
-                    ["git", "clone", "--no-checkout", url, name],
+                    ["git", "clone", url, name],
                     check=True,
                     stdout=subprocess.PIPE,
                     stderr=subprocess.PIPE,
                 )
-
-                # Setup the repo without automatic tracking
-                subprocess.run(
-                    ["git", "-C", name, "config", "remote.origin.fetch", ""],
-                    check=True,
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.PIPE,
-                )
-
-                # Manually fetch the main branch
-                subprocess.run(
-                    ["git", "-C", name, "fetch", "origin", "main"],
-                    check=True,
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.PIPE,
-                )
-
-                # Create local main branch without tracking
-                subprocess.run(
-                    [
-                        "git",
-                        "-C",
-                        name,
-                        "checkout",
-                        "-b",
-                        "main",
-                        "origin/main",
-                        "--no-track",
-                    ],
-                    check=True,
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.PIPE,
-                )
-
-                print_success(f"Cloned {name} (without tracking remote branches)")
+                print_success(f"Cloned {name}")
                 new_repos += 1
             except subprocess.CalledProcessError as e:
                 error_msg = (
@@ -353,10 +328,15 @@ def main():
     print_section(f"Repository Analysis for {org}")
     print_info(f"Found {len(repos)} repositories")
 
-    visibility_count = {}
+    # visibility_count = {}
+    # for repo in repos:
+    #     repo_visibility = repo["visibility"]
+    #     visibility_count[repo_visibility] = visibility_count.get(repo_visibility, 0) + 1
+
+    visibility_count = {"public": 0, "private": 0}
     for repo in repos:
-        repo_visibility = repo["visibility"]
-        visibility_count[repo_visibility] = visibility_count.get(repo_visibility, 0) + 1
+        visibility = "private" if repo.get("isPrivate") else "public"
+        visibility_count[visibility] += 1
 
     for repo_visibility, count in visibility_count.items():
         if repo_visibility == "public":
