@@ -2,9 +2,11 @@
 
 OLD_VERSION=$1
 NEW_VERSION=$2
+REPO_NAME=${3:-"speaking-bot"}  # Default to speaking-bot if not provided
 
 OLD_FILE="openapi_old.json"
 NEW_FILE="openapi_new.json"
+OUTPUT_DIR="updates"
 
 fetch_openapi_json() {
   VERSION=$1
@@ -93,3 +95,9 @@ EOF
 
 echo "Done. Diff saved to openapi_diff.txt"
 
+# Run analysis
+echo "Running OpenAPI schema analysis..."
+python3 analyze_openapi_changes.py "$OLD_FILE" "$NEW_FILE" --output-dir "$OUTPUT_DIR" --repo-name "$REPO_NAME"
+
+# Cleanup
+rm -f "$OLD_FILE" "$NEW_FILE"
