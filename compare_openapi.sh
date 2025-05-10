@@ -2,35 +2,56 @@
 
 OLD_VERSION=$1
 NEW_VERSION=$2
+REPO_NAME=${3:-"speaking-bot"}
+
+LATEST_COMMIT_DATE=$(git show -s --format=%cs "$NEW_VERSION")
+echo "Latest commit ($NEW_VERSION) date: $LATEST_COMMIT_DATE"
 
 OLD_FILE="openapi_old.json"
 NEW_FILE="openapi_new.json"
+OUTPUT_DIR="updates"
+CONTAINER_NAME="openapi_temp_server"
+
+# Start the server using Dockerfile
+start_server() {
+  docker build -t openapi-server -f Dockerfile .
+  docker run -d --rm --name "$CONTAINER_NAME" -p 8766:8766 openapi-server
+
+  echo -n "Waiting for server to be ready"
+  until curl -s http://localhost:8766/openapi.json >/dev/null; do
+    echo -n "."
+    sleep 1
+  done
+  echo " ✅"
+}
+
+# Stop the running container
+stop_server() {
+  docker stop "$CONTAINER_NAME" >/dev/null
+}
 
 fetch_openapi_json() {
   VERSION=$1
   OUT_FILE=$2
 
   echo "Checking out $VERSION..."
-  git checkout $VERSION --quiet
+  git checkout "$VERSION" --quiet
 
-  echo "Waiting for API server to be ready..."
-  sleep 3  # Adjust if needed
-
+  start_server
   echo "Fetching openapi.json for $VERSION..."
-  curl -s http://localhost:8766/openapi.json -o $OUT_FILE
+  curl -s http://localhost:8766/openapi.json -o "$OUT_FILE"
+  stop_server
 }
 
 echo "Comparing OpenAPI specs between $OLD_VERSION and $NEW_VERSION"
 
-fetch_openapi_json $OLD_VERSION $OLD_FILE
-fetch_openapi_json $NEW_VERSION $NEW_FILE
+fetch_openapi_json "$OLD_VERSION" "$OLD_FILE"
+fetch_openapi_json "$NEW_VERSION" "$NEW_FILE"
 
 git checkout -  # Return to original branch
 
-# Run Python diff: concise to console, full to file
 echo "Running structured JSON diff..."
 
-# Output to console
 python3 - << 'EOF'
 import json
 from deepdiff import DeepDiff
@@ -54,7 +75,6 @@ else:
                 print(f"  Error processing change: {e}")
 EOF
 
-# Output full details to file
 python3 - << 'EOF' > openapi_diff.txt
 import json
 from deepdiff import DeepDiff
@@ -91,5 +111,7 @@ else:
             print(f"  NEW: {json.dumps(new_val, indent=2)}")
 EOF
 
-echo "Done. Diff saved to openapi_diff.txt"
+echo "Running OpenAPI schema analysis..."
+python3 analyze_openapi_changes.py "$OLD_FILE" "$NEW_FILE" --output-dir "$OUTPUT_DIR" --repo-name "$REPO_NAME" --date "$LATEST_COMMIT_DATE"
 
+rm -f "$OLD_FILE" "$NEW_FILE"
